@@ -1,0 +1,211 @@
+<html>
+<head>
+<title>WebGL</title>
+</head>
+<body marginheight="0" marginwidth="0" bgcolor="blue">
+
+<canvas id="webgl-canvas" style="border: none; width:100%; height: 100%" width="100" height="100">
+</canvas>
+
+<script>
+	"use strict";
+	var ready = false;
+	var canvas = document.getElementById("webgl-canvas");
+	canvas.width = canvas.clientWidth; 
+	canvas.height = canvas.clientHeight;
+	console.log(canvas.clientWidth +" "+ canvas.clientHeight);
+	var gl = canvas.getContext("experimental-webgl");
+	gl.viewport(0, 0, canvas.clientWidth, canvas.clientHeight);
+	gl.clearColor(0, 0, 0, 1);
+	if(1)
+		gl.enable(gl.BLEND);
+	else
+		gl.enable(gl.DEPTH_TEST);
+	gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+	
+	function getShader(type, text) {
+		var shader = gl.createShader(type);
+		gl.shaderSource(shader, text);
+		gl.compileShader(shader);
+		if( ! gl.getShaderParameter(shader, gl.COMPILE_STATUS) )
+			throw gl.getShaderInfoLog(shader);
+		return shader;
+	}
+
+	var vertexShader = "attribute vec3 vertexPosition;"+
+					   "attribute vec2 textureCoord;"+
+					   "uniform mat4 mvMatrix;"+
+					   "uniform mat4 pMatrix;"+
+					   "varying vec2 vTextureCoord;"+
+					   "void main(void) {"+
+					   "  gl_Position = pMatrix * mvMatrix * vec4(vertexPosition, 1.0);"+
+					   "  vTextureCoord = textureCoord; }";
+	
+	var fragmentShader = "precision mediump float;"+
+						 "varying vec2 vTextureCoord;"+
+						 "uniform sampler2D sampler;"+
+						 "void main(void) {"+
+						 "  vec4 textureColor = texture2D(sampler, vec2(vTextureCoord.s, vTextureCoord.t));"+
+						 "  gl_FragColor = vec4(textureColor.rgb, textureColor.a * 0.99);}";
+	
+	var shaderProgram = gl.createProgram();
+	gl.attachShader(shaderProgram, getShader( gl.VERTEX_SHADER, vertexShader));
+	gl.attachShader(shaderProgram, getShader( gl.FRAGMENT_SHADER, fragmentShader));
+	gl.linkProgram(shaderProgram);
+	
+	gl.useProgram(shaderProgram);
+	var vpLoc = gl.getAttribLocation(shaderProgram, "vertexPosition");
+	gl.enableVertexAttribArray(vpLoc);
+	var tcLoc = gl.getAttribLocation(shaderProgram, "textureCoord");
+	gl.enableVertexAttribArray(tcLoc);
+
+	var pmLoc   = gl.getUniformLocation(shaderProgram, "pMatrix");
+	var mvLoc   = gl.getUniformLocation(shaderProgram, "mvMatrix");
+	var sampler = gl.getUniformLocation(shaderProgram, "sampler");
+
+	function getPerspectiveMatrix( fov, aspectRatio, near, far )	{
+		var f = 1/Math.tan(fov * Math.PI / 360.0); // some divide fov by 2 instead.
+		return new Float32Array([ f/aspectRatio, 0, 0, 0, 0, f, 0, 0, 0, 0, (near+far)/(near-far), -1, 0, 0, 2*near*far/(near-far), 0]);
+	}
+	var pMatrix = getPerspectiveMatrix( 45, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
+	
+	function pushVertices( obj, v, n) {
+		for ( var i = 0; i<v.length; i++) {
+			obj.v.push( 2*!(v[i]&1)-1, 2*!(v[i]&2)-1, 2*!(v[i]&4)-1 ); // vertices
+			//obj.t.push( i&1?1:0, i&2?1:0 ); // uv mapping
+			obj.n.push.apply( obj.n, n); // normals
+		}
+		obj.t.push( 0,0,1,0,1,1,0,1 ); // uv mapping
+	}
+	
+	function getBox() {
+		var obj = { v : [], n : [], t : [], i : []};
+		var van = [ // vertices and normals
+			[[0, 4, 6, 2], [-1, 0, 0]],
+			[[1, 3, 7, 5], [+1, 0, 0]],
+			[[0, 1, 5, 4], [0, -1, 0]],
+			[[2, 6, 7, 3], [0, +1, 0]],
+			[[0, 2, 3, 1], [0, 0, -1]],
+			[[4, 5, 7, 6], [0, 0, +1]]
+		];
+		for ( var i = 0; i<van.length; i++) {
+			pushVertices( obj, van[i][0], van[i][1] );
+			obj.i.push( 4*i+0, 4*i+1, 4*i+2, 4*i+0, 4*i+2, 4*i+3);
+		}
+		return obj;
+	}
+	var box = getBox();
+	
+	function createBuffer( target, type, data) {
+		var b = gl.createBuffer();
+		gl.bindBuffer( target, b);
+		gl.bufferData( target, new type(data), gl.STATIC_DRAW);
+		return b;
+	}
+	
+	function setUpBuffers( obj) {
+		obj.vb = createBuffer( gl.ARRAY_BUFFER, Float32Array, obj.v);
+		obj.nb = createBuffer( gl.ARRAY_BUFFER, Float32Array, obj.n);
+		obj.tb = createBuffer( gl.ARRAY_BUFFER, Float32Array, obj.t);
+		obj.ib = createBuffer( gl.ELEMENT_ARRAY_BUFFER, Uint16Array, obj.i);
+	}
+	
+	setUpBuffers( box);
+	
+	box.texture = gl.createTexture();
+	//var image = new Image(); image.onload = setUpTexture; image.src = 'pacman.png';
+
+	function setUpTexture( param) {
+		gl.bindTexture(gl.TEXTURE_2D, box.texture);
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,  param);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		ready = true;
+		return param;
+	}
+	
+	var canvas2d = setUpTexture( createGradientImage() );
+	function createGradientImage( time, canvas)
+	{
+		time = time || 0;
+		var sint = Math.sin( time);
+		var n = (sint+1)/2;
+		canvas = canvas || document.createElement("canvas");
+		var d = 512;
+		canvas.width = canvas.height = d;
+		var context = canvas.getContext('2d');
+		context.rect(0, 0, d, d);
+		var grad = context.createRadialGradient(d/2, d/2, 475, d/2, d/2, 0);
+		grad.addColorStop(0, '#8ED6FF');
+		grad.addColorStop(0.3, 'hsla('+Math.floor(360*n)+', 100%, 50%, 1)');
+		grad.addColorStop(0.4, '#000');
+
+		var position = ((sint+1)/8)+0.5;
+		grad.addColorStop(position-0.05, '#000');
+		grad.addColorStop(position, 'hsla('+Math.floor(180*n)+', 100%, 50%, 1)'); // 'rgba(0,76,'+Math.floor(255*sint)+', 1)'
+		grad.addColorStop(position+0.05, '#000');
+
+		grad.addColorStop(0.9, '#000');
+		grad.addColorStop(1, 'hsla('+Math.floor(90*n)+', 100%, 50%, 1)');
+		context.fillStyle = grad;
+		context.fill();
+		return canvas;
+	}
+
+	var mvMatrix = new Float32Array(16);
+	
+	function drawScene( obj) {
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		
+		gl.uniformMatrix4fv( pmLoc, false, pMatrix);
+		gl.uniformMatrix4fv( mvLoc, false, mvMatrix);
+	
+		gl.bindBuffer( gl.ARRAY_BUFFER, obj.vb);
+		gl.vertexAttribPointer( vpLoc, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer( gl.ARRAY_BUFFER, obj.tb);
+		gl.vertexAttribPointer( tcLoc, 2, gl.FLOAT, false, 0, 0);
+
+		gl.bindTexture( gl.TEXTURE_2D, obj.texture);
+		gl.uniform1i( sampler, 0);
+
+		gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, obj.ib);
+		gl.drawElements( gl.TRIANGLES, obj.i.length, gl.UNSIGNED_SHORT, 0);
+	}
+
+	var lastTime=0;
+	function tick( timeNow) {
+		var elapsed = timeNow - lastTime;
+		lastTime = timeNow;
+		if(isNaN(elapsed)) elapsed = 0;
+		requestAnimationFrame(tick);
+		if( ready) {
+			var e = timeNow/1000;
+			getRotationMatrix( mvMatrix, e*0.1,e*0.7,e*0.2);
+			mvMatrix[14]=-6;
+			drawScene(box);
+			createGradientImage( e, canvas2d);
+			gl.bindTexture(gl.TEXTURE_2D, box.texture);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,  canvas2d);
+		}
+	}
+	
+	console.log( 'error: ' + gl.getError());
+	requestAnimationFrame(tick);
+	
+
+	function getRotationMatrix( mat, x,y,z) {
+		var sinx = Math.sin(x), cosx = Math.cos(x), siny = Math.sin(y),
+			cosy = Math.cos(y), sinz = Math.sin(z), cosz = Math.cos(z);
+		var coszsiny = cosz * siny, sinzsiny = sinz * siny;
+
+		Array.prototype.splice.call( mat, 0, 16, cosz * cosy, sinz * cosy, -siny, 0, coszsiny * sinx - sinz * cosx, sinzsiny * sinx + cosz * cosx,
+		cosy * sinx, 0, coszsiny * cosx + sinz * sinx, sinzsiny * cosx - cosz * sinx, cosy * cosx, 0, 0, 0, 0, 1);
+	}
+</script>
+
+
+</body>
+</html>
