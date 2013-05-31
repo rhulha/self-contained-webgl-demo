@@ -139,16 +139,16 @@
 		context.rect(0, 0, d, d);
 		var grad = context.createRadialGradient(d/2, d/2, 475, d/2, d/2, 0);
 		grad.addColorStop(0, '#8ED6FF');
-		grad.addColorStop(0.3, 'hsla('+Math.floor(360*n)+', 100%, 50%, 1)');
+		grad.addColorStop(0.3, 'hsla('+((360*n)>>0)+', 100%, 50%, 1)');
 		grad.addColorStop(0.4, '#000');
 
 		var position = ((sint+1)/8)+0.5;
 		grad.addColorStop(position-0.05, '#000');
-		grad.addColorStop(position, 'hsla('+Math.floor(180*n)+', 100%, 50%, 1)'); // 'rgba(0,76,'+Math.floor(255*sint)+', 1)'
+		grad.addColorStop(position, 'hsla('+((180*n)>>0)+', 100%, 50%, 1)'); // 'rgba(0,76,'+Math.floor(255*sint)+', 1)'
 		grad.addColorStop(position+0.05, '#000');
 
 		grad.addColorStop(0.9, '#000');
-		grad.addColorStop(1, 'hsla('+Math.floor(90*n)+', 100%, 50%, 1)');
+		grad.addColorStop(1, 'hsla('+((90*n)>>0)+', 100%, 50%, 1)');
 		context.fillStyle = grad;
 		context.fill();
 		return canvas;
@@ -184,7 +184,7 @@
 		if( ready) {
 			var e = timeNow/1000;
 			getRotationMatrix( mvMatrix, e*0.1,e*0.7,e*0.2);
-			mvMatrix[14]=-6;
+			mvMatrix[14]=-1*(Math.sin(e)+1);
 			drawScene(box);
 			createGradientImage( e, canvas2d);
 			gl.bindTexture(gl.TEXTURE_2D, box.texture);
@@ -193,6 +193,7 @@
 	}
 	
 	console.log( 'error: ' + gl.getError());
+	window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame;
 	requestAnimationFrame(tick);
 	
 
