@@ -1,0 +1,440 @@
+<html>
+<head>
+<title>WebGL</title>
+</head>
+<body marginheight="0" marginwidth="0" bgcolor="blue">
+
+<canvas id="webgl-canvas" style="border: none; width:100%; height: 100%" width="100" height="100" ondragstart="return false;">
+</canvas>
+
+<script>
+	"use strict";
+	var ready = false;
+	var canvas = document.getElementById("webgl-canvas");
+	canvas.width = canvas.clientWidth; 
+	canvas.height = canvas.clientHeight;
+	console.log(canvas.clientWidth +" "+ canvas.clientHeight);
+	var gl = canvas.getContext("experimental-webgl");
+	gl.viewport(0, 0, canvas.clientWidth, canvas.clientHeight);
+	gl.clearColor(0, 0, 0, 1);
+	if(0)
+		gl.enable(gl.BLEND);
+	else
+		gl.enable(gl.DEPTH_TEST);
+	gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+	
+	function getShader(type, text) {
+		var shader = gl.createShader(type);
+		gl.shaderSource(shader, text);
+		gl.compileShader(shader);
+		if( ! gl.getShaderParameter(shader, gl.COMPILE_STATUS) )
+			throw gl.getShaderInfoLog(shader);
+		return shader;
+	}
+
+	var vertexShader = "attribute vec3 vertexPosition;"+
+					   "attribute vec2 textureCoord;"+
+					   "uniform mat4 mvMatrix;"+
+					   "uniform mat4 pMatrix;"+
+					   "varying vec2 vTextureCoord;"+
+					   "void main(void) {"+
+					   "  gl_Position = pMatrix * mvMatrix * vec4(vertexPosition, 1.0);"+
+					   "  vTextureCoord = textureCoord; }";
+	
+	var fragmentShader = "precision mediump float;"+
+						 "varying vec2 vTextureCoord;"+
+						 "uniform sampler2D sampler;"+
+						 "void main(void) {"+
+						 "  vec4 textureColor = texture2D(sampler, vec2(vTextureCoord.s, vTextureCoord.t));"+
+						 "  gl_FragColor = vec4(textureColor.rgb, textureColor.a * 0.99);\n"+
+						 "//gl_FragColor = vec4( vec3( vTextureCoord, 0. ), 1. );\n}";
+	
+	var shaderProgram = gl.createProgram();
+	gl.attachShader(shaderProgram, getShader( gl.VERTEX_SHADER, vertexShader));
+	gl.attachShader(shaderProgram, getShader( gl.FRAGMENT_SHADER, fragmentShader));
+	gl.linkProgram(shaderProgram);
+	
+	gl.useProgram(shaderProgram);
+	var vpLoc = gl.getAttribLocation(shaderProgram, "vertexPosition");
+	gl.enableVertexAttribArray(vpLoc);
+	var tcLoc = gl.getAttribLocation(shaderProgram, "textureCoord");
+	gl.enableVertexAttribArray(tcLoc);
+
+	var pmLoc   = gl.getUniformLocation(shaderProgram, "pMatrix");
+	var mvLoc   = gl.getUniformLocation(shaderProgram, "mvMatrix");
+	var sampler = gl.getUniformLocation(shaderProgram, "sampler");
+
+	function getPerspectiveMatrix( fov, aspectRatio, near, far )	{
+		var f = 1/Math.tan(fov * Math.PI / 360.0); // some divide fov by 2 instead.
+		return new Float32Array([ f/aspectRatio, 0, 0, 0, 0, f, 0, 0, 0, 0, (near+far)/(near-far), -1, 0, 0, 2*near*far/(near-far), 0]);
+	}
+	var pMatrix = getPerspectiveMatrix( 45, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
+	
+	function pushVertices( obj, v, n) {
+		for ( var i = 0; i<v.length; i++) {
+			obj.v.push( 2*!(v[i]&1)-1, 2*!(v[i]&2)-1, 2*!(v[i]&4)-1 ); // vertices
+			//obj.t.push( i&1?1:0, i&2?1:0 ); // uv mapping
+			obj.n.push.apply( obj.n, n); // normals
+		}
+		obj.t.push( 0,0,1,0,1,1,0,1 ); // uv mapping
+	}
+	
+	function getBox() {
+		var obj = { v : [], n : [], t : [], i : []};
+		var van = [ // vertices and normals
+			[[0, 4, 6, 2], [-1, 0, 0]],
+			[[1, 3, 7, 5], [+1, 0, 0]],
+			[[0, 1, 5, 4], [0, -1, 0]],
+			[[2, 6, 7, 3], [0, +1, 0]],
+			[[0, 2, 3, 1], [0, 0, -1]],
+			[[4, 5, 7, 6], [0, 0, +1]]
+		];
+		for ( var i = 0; i<van.length; i++) {
+			pushVertices( obj, van[i][0], van[i][1] );
+			obj.i.push( 4*i+0, 4*i+1, 4*i+2, 4*i+0, 4*i+2, 4*i+3);
+		}
+		return obj;
+	}
+	
+	var p1 = {}, p2 = {};
+	function getTorusKnot( radius, tube, segmentsR, segmentsT, p, q, heightScale) {
+		var obj = { v : [], n : [], t : [], i : []};
+		radius = radius || 20;
+		tube = tube || 4;
+		segmentsR = segmentsR || 128;
+		segmentsT = segmentsT || 16;
+		p = p || 2;
+		q = q || 3;
+		heightScale = heightScale || 1;
+	
+		var tang = {};
+		var n = {};
+		var bitan = {};
+		var grid = new Array(segmentsR);
+		
+		for ( var i = 0; i < segmentsR; ++ i ) {
+			grid[ i ] = new Array( segmentsT );
+			var u = i / segmentsR * 2 * p * Math.PI;
+			getPos( u, q, p, radius, heightScale, p1 );
+			getPos( u + 0.02, q, p, radius, heightScale, p2 );
+			tang.x = p2.x - p1.x; tang.y = p2.y - p1.y; tang.z = p2.z - p1.z;
+			n.x = p2.x + p1.x; n.y = p2.y + p1.y; n.z = p2.z + p1.z; 
+			cross( tang, n, bitan );
+			cross( bitan, tang, n );
+			normalize(bitan);
+			normalize(n);
+
+			for ( var j = 0; j < segmentsT; ++ j ) {
+				var v = j / segmentsT * 2 * Math.PI;
+				var cx, cy;
+
+
+				cx = tube * Math.cos( v ); // TODO: Hack: Negating it so it faces outside.
+				cy = tube * Math.sin( v );
+
+				grid[ i ][ j ] = (obj.v.push( 
+					p1.x + cx * n.x + cy * bitan.x,
+					p1.y + cx * n.y + cy * bitan.y,
+					p1.z + cx * n.z + cy * bitan.z
+				) / 3) - 1 ;
+			}
+		}
+		
+		for ( var i = 0; i < segmentsR; ++ i ) {
+			for ( var j = 0; j < segmentsT; ++ j ) {
+				var ip = ( i + 1 ) % segmentsR;
+				var jp = ( j + 1 ) % segmentsT;
+				var a = grid[ i  ][ j ]; 
+				var b = grid[ ip ][ j ];
+				var c = grid[ ip ][ jp ];
+				var d = grid[ i  ][ jp ]; 
+
+				var uva = [ i / segmentsR, j / segmentsT ];
+				var uvb = [( i + 1 ) / segmentsR, j / segmentsT ];
+				var uvc = [(i + 1 ) / segmentsR, ( j + 1 ) / segmentsT ];
+				var uvd = [ i / segmentsR, ( j + 1 ) / segmentsT ];
+
+				//uva[0] = 0; uva[1] = 0;
+				//uvb[0] = 1; uvb[1] = 0;
+				//uvc[0] = 1; uvc[1] = 1;
+				//uvd[0] = 0; uvd[1] = 1;
+				uva[0] = 0;
+				uvb[0] = 1;
+				uvc[0] = 1;
+				uvd[0] = 0;
+
+				obj.i.push( a, b, c );
+				//obj.i.push( d, c, b );
+				obj.i.push( a, c, d );
+				obj.t.push.apply( obj.t, uva);
+				obj.t.push.apply( obj.t, uvb);
+				obj.t.push.apply( obj.t, uvc);
+
+				obj.t.push.apply( obj.t, uvd);
+				obj.t.push.apply( obj.t, uvc);
+				obj.t.push.apply( obj.t, uvb);
+			}
+		}
+		
+		return obj;
+	}
+	
+	function getPos( u, in_q, in_p, radius, heightScale, vec ) {
+		var cu = Math.cos( u );
+		var su = Math.sin( u );
+		var quOverP = in_q / in_p * u;
+		var cs = Math.cos( quOverP );
+
+		vec.x = radius * ( 2 + cs ) * 0.5 * cu;
+		vec.y = radius * ( 2 + cs ) * su * 0.5;
+		vec.z = heightScale * radius * Math.sin( quOverP ) * 0.5;
+
+		return vec;
+	}
+
+	var box = getTorusKnot();
+	//var torusKnot = getTorusKnot();
+	
+	function createBuffer( target, type, data) {
+		var b = gl.createBuffer();
+		gl.bindBuffer( target, b);
+		gl.bufferData( target, new type(data), gl.STATIC_DRAW);
+		return b;
+	}
+	
+	function setUpBuffers( obj) {
+		obj.vb = createBuffer( gl.ARRAY_BUFFER, Float32Array, obj.v);
+		//obj.nb = createBuffer( gl.ARRAY_BUFFER, Float32Array, obj.n);
+		obj.tb = createBuffer( gl.ARRAY_BUFFER, Float32Array, obj.t);
+		obj.ib = createBuffer( gl.ELEMENT_ARRAY_BUFFER, Uint16Array, obj.i);
+	}
+	
+	setUpBuffers( box);
+	
+	box.texture = gl.createTexture();
+	//var image = new Image(); image.onload = setUpTexture; image.src = 'pacman.png';
+
+	function setUpTexture( param) {
+		gl.bindTexture(gl.TEXTURE_2D, box.texture);
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,  param);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		ready = true;
+		return param;
+	}
+	
+	var canvas2d = setUpTexture( createGradientImage2() );
+	function createGradientImage( time, canvas)
+	{
+		time = time || 0;
+		var sint = Math.sin( time);
+		var n = (sint+1)/2;
+		canvas = canvas || document.createElement("canvas");
+		var d = 512;
+		canvas.width = canvas.height = d;
+		var context = canvas.getContext('2d');
+		context.rect(0, 0, d, d);
+		var grad = context.createRadialGradient(d/2, d/2, 475, d/2, d/2, 0);
+		grad.addColorStop(0, '#8ED6FF');
+		grad.addColorStop(0.3, 'hsla('+((360*n)>>0)+', 100%, 50%, 1)');
+		grad.addColorStop(0.4, '#000');
+
+		var position = ((sint+1)/8)+0.5;
+		grad.addColorStop(position-0.05, '#000');
+		grad.addColorStop(position, 'hsla('+((180*n)>>0)+', 100%, 50%, 1)'); // 'rgba(0,76,'+Math.floor(255*sint)+', 1)'
+		grad.addColorStop(position+0.05, '#000');
+
+		grad.addColorStop(0.9, '#000');
+		grad.addColorStop(1, 'hsla('+((90*n)>>0)+', 100%, 50%, 1)');
+		context.fillStyle = grad;
+		context.fill();
+		return canvas;
+	}
+
+	function createGradientImage2( time, canvas)
+	{
+		time = time || 0;
+		var sint = Math.sin( time);
+		var n = (sint+1)/2;
+		canvas = canvas || document.createElement("canvas");
+		var d = 512;
+		canvas.width = canvas.height = d;
+		var context = canvas.getContext('2d');
+		context.rect(0, 0, d, d);
+		var grad = context.createLinearGradient(0, 0, 0, d);
+		grad.addColorStop(0, 'hsla('+((360*n)>>0)+', 100%, 50%, 1)');
+		grad.addColorStop(0.25, 'black');
+		grad.addColorStop(0.5, 'hsla('+((90*n)>>0)+', 100%, 50%, 1)');
+		grad.addColorStop(0.75, 'black');
+		grad.addColorStop(1, 'hsla('+((360*n)>>0)+', 100%, 50%, 1)');
+		context.fillStyle = grad;
+		context.fill();
+		return canvas;
+	}
+
+	var mvMatrix = new Float32Array(16);
+	
+	function drawScene( obj) {
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		
+		gl.uniformMatrix4fv( pmLoc, false, pMatrix);
+		gl.uniformMatrix4fv( mvLoc, false, mvMatrix);
+	
+		gl.bindBuffer( gl.ARRAY_BUFFER, obj.vb);
+		gl.vertexAttribPointer( vpLoc, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer( gl.ARRAY_BUFFER, obj.tb);
+		gl.vertexAttribPointer( tcLoc, 2, gl.FLOAT, false, 0, 0);
+
+		gl.bindTexture( gl.TEXTURE_2D, obj.texture);
+		gl.uniform1i( sampler, 0);
+
+		gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, obj.ib);
+		gl.drawElements( gl.TRIANGLES, obj.i.length, gl.UNSIGNED_SHORT, 0);
+	}
+
+	var lastTime=0;
+	function tick( timeNow) {
+		var elapsed = timeNow - lastTime;
+		lastTime = timeNow;
+		if(isNaN(elapsed)) elapsed = 0;
+		requestAnimationFrame(tick);
+		if( ready) {
+			var e = timeNow/1000;
+			
+			if( 0 )
+			{
+				getRotationMatrix( mvMatrix, e*0.1,e*0.7,e*0.2);
+				mvMatrix[14]=-42*(Math.sin(e)+1);
+			} else {
+				getPos( e/1, 2, 3, 20, 1, p1 );
+				getPos( (e/1) + 0.01, 2, 3, 20, 1, p2 );
+				cameraLookAt( mvMatrix, p2, p1);
+			}
+			
+
+			drawScene(box);
+			createGradientImage2( e, canvas2d);
+			gl.bindTexture(gl.TEXTURE_2D, box.texture);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,  canvas2d);
+		}
+	}
+	
+	console.log( 'error: ' + gl.getError());
+	window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame;
+	requestAnimationFrame(tick);
+
+	var tempArray = [];
+	function getRotationMatrix( mat, x, y, z ) {
+		var sinx = Math.sin(x), cosx = Math.cos(x), siny = Math.sin(y),
+			cosy = Math.cos(y), sinz = Math.sin(z), cosz = Math.cos(z);
+		var coszsiny = cosz * siny, sinzsiny = sinz * siny;
+
+		tempArray.splice( 0, 16, cosz * cosy, sinz * cosy, -siny, 0, coszsiny * sinx - sinz * cosx, sinzsiny * sinx + cosz * cosx,
+		cosy * sinx, 0, coszsiny * cosx + sinz * sinx, sinzsiny * cosx - cosz * sinx, cosy * cosx, 0, 0, 0, 0, 1);
+		mat.set( tempArray);
+	}
+
+    function cross( vec1, vec2, dest) {
+        if (!dest) { dest = vec; }
+        var x1 = vec1.x, y1 = vec1.y, z1 = vec1.z;
+        var x2 = vec2.x, y2 = vec2.y, z2 = vec2.z;
+        dest.x = y1 * z2 - z1 * y2;
+        dest.y = z1 * x2 - x1 * z2;
+        dest.z = x1 * y2 - y1 * x2;
+        return dest;
+    }
+	
+	function normalize( vec) {
+        var x = vec.x, y = vec.y, z = vec.z,
+            len = Math.sqrt(x * x + y * y + z * z);
+        if (!len || (len === 1)) return;
+        len = 1 / len;
+        vec.x = x * len;
+        vec.y = y * len;
+        vec.z = z * len;
+    }
+
+	function subtract( a, b, c) {
+		c.x = a.x - b.x;
+		c.y = a.y - b.y;
+		c.z = a.z - b.z;
+		return c;
+	}
+
+	// https://code.google.com/p/webglsamples/source/browse/tdl/math.js?r=5e24ec2f382ed119d1881763dc1eafce98ad9162
+	var defaultUp = {x:0,y:1,z:0};
+	var vx = {}, vy = {}, vz = {};
+	function cameraLookAt( mat, eye, target, up) {
+		up = up || defaultUp;
+		normalize( subtract( eye, target, vz));
+		normalize( cross( up, vz, vx));
+		normalize(cross( vz, vx, vy));
+		//eye.x = -(vx.x * eye.x + vx.y * eye.y + vx.z * eye.z);
+		//eye.y = -(vy.x * eye.x + vy.y * eye.y + vy.z * eye.z);
+		//eye.z = -(vz.x * eye.x + vz.y * eye.y + vz.z * eye.z);
+
+		//tempArray.splice( 0, 16, vx.x, vy.x, vz.x, 0, vx.y, vy.y, vz.y, 0, vx.z, vy.z, vz.z, 0, eye.x, eye.y, eye.z, 1);
+		
+		tempArray.splice( 0, 16, vx.x, vx.y, vx.z, 0, vy.x, vy.y, vy.z, 0, vz.x, vz.y, vz.z, 0, eye.x, eye.y, eye.z, 1);
+		mat.set( tempArray);
+		invert( mat);
+
+	}
+	
+	function invert( mat, dest) {
+        if (!dest) { dest = mat; }
+
+        // Cache the matrix values (makes for huge speed increases!)
+        var a00 = mat[0], a01 = mat[1], a02 = mat[2], a03 = mat[3],
+            a10 = mat[4], a11 = mat[5], a12 = mat[6], a13 = mat[7],
+            a20 = mat[8], a21 = mat[9], a22 = mat[10], a23 = mat[11],
+            a30 = mat[12], a31 = mat[13], a32 = mat[14], a33 = mat[15],
+
+            b00 = a00 * a11 - a01 * a10,
+            b01 = a00 * a12 - a02 * a10,
+            b02 = a00 * a13 - a03 * a10,
+            b03 = a01 * a12 - a02 * a11,
+            b04 = a01 * a13 - a03 * a11,
+            b05 = a02 * a13 - a03 * a12,
+            b06 = a20 * a31 - a21 * a30,
+            b07 = a20 * a32 - a22 * a30,
+            b08 = a20 * a33 - a23 * a30,
+            b09 = a21 * a32 - a22 * a31,
+            b10 = a21 * a33 - a23 * a31,
+            b11 = a22 * a33 - a23 * a32,
+
+            d = (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06),
+            invDet;
+
+		// Calculate the determinant
+		if (!d) { return null; }
+		invDet = 1 / d;
+
+        dest[0] = (a11 * b11 - a12 * b10 + a13 * b09) * invDet;
+        dest[1] = (-a01 * b11 + a02 * b10 - a03 * b09) * invDet;
+        dest[2] = (a31 * b05 - a32 * b04 + a33 * b03) * invDet;
+        dest[3] = (-a21 * b05 + a22 * b04 - a23 * b03) * invDet;
+        dest[4] = (-a10 * b11 + a12 * b08 - a13 * b07) * invDet;
+        dest[5] = (a00 * b11 - a02 * b08 + a03 * b07) * invDet;
+        dest[6] = (-a30 * b05 + a32 * b02 - a33 * b01) * invDet;
+        dest[7] = (a20 * b05 - a22 * b02 + a23 * b01) * invDet;
+        dest[8] = (a10 * b10 - a11 * b08 + a13 * b06) * invDet;
+        dest[9] = (-a00 * b10 + a01 * b08 - a03 * b06) * invDet;
+        dest[10] = (a30 * b04 - a31 * b02 + a33 * b00) * invDet;
+        dest[11] = (-a20 * b04 + a21 * b02 - a23 * b00) * invDet;
+        dest[12] = (-a10 * b09 + a11 * b07 - a12 * b06) * invDet;
+        dest[13] = (a00 * b09 - a01 * b07 + a02 * b06) * invDet;
+        dest[14] = (-a30 * b03 + a31 * b01 - a32 * b00) * invDet;
+        dest[15] = (a20 * b03 - a21 * b01 + a22 * b00) * invDet;
+
+        return dest;
+    }
+	
+</script>
+
+
+</body>
+</html>
