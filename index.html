@@ -197,13 +197,15 @@
 	requestAnimationFrame(tick);
 	
 
-	function getRotationMatrix( mat, x,y,z) {
+	var tempArray = [];
+	function getRotationMatrix( mat, x, y, z ) {
 		var sinx = Math.sin(x), cosx = Math.cos(x), siny = Math.sin(y),
 			cosy = Math.cos(y), sinz = Math.sin(z), cosz = Math.cos(z);
 		var coszsiny = cosz * siny, sinzsiny = sinz * siny;
 
-		Array.prototype.splice.call( mat, 0, 16, cosz * cosy, sinz * cosy, -siny, 0, coszsiny * sinx - sinz * cosx, sinzsiny * sinx + cosz * cosx,
+		tempArray.splice( 0, 16, cosz * cosy, sinz * cosy, -siny, 0, coszsiny * sinx - sinz * cosx, sinzsiny * sinx + cosz * cosx,
 		cosy * sinx, 0, coszsiny * cosx + sinz * sinx, sinzsiny * cosx - cosz * sinx, cosy * cosx, 0, 0, 0, 0, 1);
+		mat.set( tempArray);
 	}
 </script>
 
