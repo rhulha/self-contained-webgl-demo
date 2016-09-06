@@ -1,0 +1,198 @@
+<html>
+<head>
+<title>GalZen</title>
+</head>
+<body marginheight="0" marginwidth="0" bgcolor="blue">
+
+<canvas id="webgl-canvas" style="border: none; width:100%; height: 100%" width="100" height="100">
+</canvas>
+
+<script>
+	"use strict";
+	var canvas = document.getElementById("webgl-canvas");
+	canvas.width = canvas.clientWidth; 
+	canvas.height = canvas.clientHeight;
+	var gl = canvas.getContext("experimental-webgl");
+	gl.viewport(0, 0, canvas.clientWidth, canvas.clientHeight);
+	gl.clearColor(0, 0, 0, 1);
+	gl.enable(gl.BLEND);
+	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_COLOR);
+	gl.blendEquation(gl.FUNC_ADD);
+	gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+	
+	function getShader(type, text) {
+		var shader = gl.createShader(type);
+		gl.shaderSource(shader, text);
+		gl.compileShader(shader);
+		if( ! gl.getShaderParameter(shader, gl.COMPILE_STATUS) )
+			throw gl.getShaderInfoLog(shader);
+		return shader;
+	}
+
+	var vertexShader = "attribute vec3 vertexPosition;"+
+					   "attribute vec3 color;"+
+					   "uniform mat4 mvMatrix;"+
+					   "uniform mat4 pMatrix;"+
+					   "varying vec3 vColor;"+
+					   "void main(void) {"+
+					   "  gl_Position = pMatrix * mvMatrix * vec4(vertexPosition, 1.0);"+
+					   "  gl_PointSize = 300.0/gl_Position.z;"+
+					   "  vColor = color;"+
+					   "}";
+	
+	var fragmentShader = "precision mediump float;"+
+						 "varying vec3 vColor;"+
+						 "void main(void) {"+
+						 "  vec2 uv = 2.0 * gl_PointCoord - 1.0;"+
+						 "  float r = 1.0-(uv.x * uv.x + uv.y * uv.y);"+
+						 "  gl_FragColor = vec4(vec3(r)*vColor,1.0);"+
+						 "}";
+	
+	var shaderProgram = gl.createProgram();
+	gl.attachShader(shaderProgram, getShader( gl.VERTEX_SHADER, vertexShader));
+	gl.attachShader(shaderProgram, getShader( gl.FRAGMENT_SHADER, fragmentShader));
+	gl.linkProgram(shaderProgram);
+	gl.useProgram(shaderProgram);
+
+	var vpLoc = gl.getAttribLocation(shaderProgram, "vertexPosition");
+	gl.enableVertexAttribArray(vpLoc);
+
+	var cLoc = gl.getAttribLocation(shaderProgram, "color");
+	gl.enableVertexAttribArray(cLoc);
+
+	var pmLoc   = gl.getUniformLocation(shaderProgram, "pMatrix");
+	var mvLoc   = gl.getUniformLocation(shaderProgram, "mvMatrix");
+
+	function getPerspectiveMatrix( fov, aspectRatio, near, far )	{
+		var f = 1/Math.tan(fov * Math.PI / 360.0); // some divide fov by 2 instead.
+		return new Float32Array([ f/aspectRatio, 0, 0, 0, 0, f, 0, 0, 0, 0, (near+far)/(near-far), -1, 0, 0, 2*near*far/(near-far), 0]);
+	}
+	var pMatrix = getPerspectiveMatrix( 45, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
+	
+	var cameraDistance = -50;
+	
+	var planets = [0,0, 5,5, -5,-5, -5,5, 5,-5];
+	
+	var particleCount = 2000;
+	var p = { v:new Float32Array(particleCount*3), m:[], a:[], p:[], c:new Float32Array(particleCount*3), vb : gl.createBuffer(), cb : gl.createBuffer() };
+	for ( var i = 0; i < particleCount; i++) {
+		p.v[i*3+0] = (Math.random() - 0.5) * 50; // vertices
+		p.v[i*3+1] = (Math.random() - 0.5) * 50;
+		p.v[i*3+2] = 0;
+		p.m[i*2+0] = 0; // movement vector
+		p.m[i*2+1] = 0;
+		p.a[i*2+0] = 0; // acceleration vector
+		p.a[i*2+1] = 0;
+		p.p[i] = Math.floor(Math.random() * (planets.length/2+1)); // assigned planet 
+		p.c[i*3+0] = ( p.p[i] & 1) == 0?1:0; // color
+		p.c[i*3+1] = ( p.p[i] & 2) == 0?1:0;
+		p.c[i*3+2] = ( p.p[i] & 4) == 0?1:0;
+	}
+	
+	var mvMatrix = new Float32Array(16);
+	mvMatrix[0] = 1;
+	mvMatrix[5] = 1;
+	mvMatrix[10] = 1;
+	mvMatrix[14] = cameraDistance;
+	mvMatrix[15] = 1;
+
+	gl.bindBuffer( gl.ARRAY_BUFFER, p.cb);
+	gl.bufferData( gl.ARRAY_BUFFER, new Float32Array(p.c), gl.DYNAMIC_DRAW);
+	gl.vertexAttribPointer( cLoc, 3, gl.FLOAT, false, 0, 0);
+		
+	
+	function drawScene(elapsed) {
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		
+		gl.uniformMatrix4fv( pmLoc, false, pMatrix);
+		gl.uniformMatrix4fv( mvLoc, false, mvMatrix);
+	
+		gl.bindBuffer( gl.ARRAY_BUFFER, p.vb);
+		gl.bufferData( gl.ARRAY_BUFFER, p.v, gl.DYNAMIC_DRAW);
+		gl.vertexAttribPointer( vpLoc, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer( gl.ARRAY_BUFFER, p.cb);
+		gl.bufferData( gl.ARRAY_BUFFER, p.c, gl.DYNAMIC_DRAW);
+		gl.vertexAttribPointer( cLoc, 3, gl.FLOAT, false, 0, 0);
+
+		gl.drawArrays( gl.POINTS, 0, particleCount);
+	}
+
+	function vecLen2DSquared(arr,pos) {
+		var a = arr[pos*2+0];
+		var b = arr[pos*2+1];
+		return a*a+b*b;
+	}
+
+	function vecLen2D(arr,pos) {
+		var a = arr[pos*2+0];
+		var b = arr[pos*2+1];
+		return Math.sqrt(a*a+b*b);
+	}
+
+	function normalize2D( arr, pos, factor) {
+		var lengthInv = factor/vecLen2D(arr, pos);
+		arr[pos*2+0] *= lengthInv;
+		arr[pos*2+1] *= lengthInv;
+	}
+	
+	var lastTime=0;
+	function tick( timeNow) {
+		var elapsed = timeNow - lastTime;
+		lastTime = timeNow;
+		if(isNaN(elapsed)) elapsed = 0;
+		requestAnimationFrame(tick);
+		var e = timeNow/1000;
+		//mvMatrix[14] += 0.1; // zoom camera
+		for ( var i = 0; i < particleCount; i++) {
+			p.v[i*3+0] += p.m[i*2+0]; // add the movement vector to the current position
+			p.v[i*3+1] += p.m[i*2+1];
+			
+			p.a[i*2+0] = planets[p.p[i]*2+0] - p.v[i*3+0]; // set the accel vector to the direction of the planet
+			p.a[i*2+1] = planets[p.p[i]*2+1] - p.v[i*3+1];
+			
+			normalize2D(p.a,i,0.01); // normalize it
+
+			p.m[i*2+0] += p.a[i*2+0]; // set the movement vector 
+			p.m[i*2+1] += p.a[i*2+1];
+			
+			if(vecLen2DSquared(p.m,i)>0.04) { // clamp the movement vector
+				normalize2D(p.m,i, 0.2);
+			}
+		}
+		drawScene(e);
+	}
+	
+	console.log( 'error: ' + gl.getError());
+	requestAnimationFrame(tick);
+	
+	function distance(x1, y1, x2, y2) {
+		var x = x2 - x1,
+			y = y2 - y1;
+		return Math.sqrt(x*x + y*y);
+	};
+	
+	canvas.addEventListener('mousedown', function(e){
+		var x = e.clientX;
+		var y = e.clientY;
+		var closestPlanet = 0;
+		var lastDistance = 10000;
+		for ( var i = 0; i < planets.length/2; i++) {
+			var px = planets[i*2+0];
+			var py = planets[i*2+1];
+			var d = distance( x, y, px, py);
+			if( d < lastDistance) {
+				lastDistance = d;
+				closestPlanet = i;
+			}
+		}
+		
+	});
+
+
+</script>
+
+
+</body>
+</html>
