@@ -184,7 +184,7 @@
 		if( ready) {
 			var e = timeNow/1000;
 			getRotationMatrix( mvMatrix, e*0.1,e*0.7,e*0.2);
-			mvMatrix[14]=-3*(Math.sin(e)+1);
+			mvMatrix[14]=-1*(Math.sin(e)+1);
 			drawScene(box);
 			createGradientImage( e, canvas2d);
 			gl.bindTexture(gl.TEXTURE_2D, box.texture);
