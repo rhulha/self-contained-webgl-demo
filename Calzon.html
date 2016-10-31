@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>GalZen</title>
+<title>Calzon</title>
 </head>
 <body marginheight="0" marginwidth="0" bgcolor="blue">
 
@@ -12,6 +12,7 @@
 	var canvas = document.getElementById("webgl-canvas");
 	canvas.width = canvas.clientWidth; 
 	canvas.height = canvas.clientHeight;
+	var aspect = canvas.width / canvas.height;
 	var gl = canvas.getContext("experimental-webgl");
 	gl.viewport(0, 0, canvas.clientWidth, canvas.clientHeight);
 	gl.clearColor(0, 0, 0, 1);
@@ -32,12 +33,11 @@
 
 	var vertexShader = "attribute vec3 vertexPosition;"+
 					   "attribute vec3 color;"+
-					   "uniform mat4 mvMatrix;"+
-					   "uniform mat4 pMatrix;"+
 					   "varying vec3 vColor;"+
 					   "void main(void) {"+
-					   "  gl_Position = pMatrix * mvMatrix * vec4(vertexPosition, 1.0);"+
-					   "  gl_PointSize = 300.0/gl_Position.z;"+
+					   "  gl_Position = vec4(vertexPosition, 1.0);"+
+					   "  gl_Position.x /= " + aspect + ";"+
+					   "  gl_PointSize = 6.0;"+
 					   "  vColor = color;"+
 					   "}";
 	
@@ -60,54 +60,45 @@
 
 	var cLoc = gl.getAttribLocation(shaderProgram, "color");
 	gl.enableVertexAttribArray(cLoc);
-
-	var pmLoc   = gl.getUniformLocation(shaderProgram, "pMatrix");
-	var mvLoc   = gl.getUniformLocation(shaderProgram, "mvMatrix");
-
-	function getPerspectiveMatrix( fov, aspectRatio, near, far )	{
-		var f = 1/Math.tan(fov * Math.PI / 360.0); // some divide fov by 2 instead.
-		return new Float32Array([ f/aspectRatio, 0, 0, 0, 0, f, 0, 0, 0, 0, (near+far)/(near-far), -1, 0, 0, 2*near*far/(near-far), 0]);
-	}
-	var pMatrix = getPerspectiveMatrix( 45, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
 	
-	var cameraDistance = -50;
+	var players = [{
+			color: [0.8,0.8,0.8]; // neutral
+		},{
+			color: [0,0,1]; // human
+		},{
+			color: [1,0,0]; // computer 1
+		},{
+			color: [0,1,0]; // computer 2
+	}];
 	
-	var planets = [0,0, 5,5, -5,-5, -5,5, 5,-5];
+	var planets = [
+		{ pos: [0,0], owner: players[0]}, 
+		{ pos: [0.5,0.5], owner: players[1]}, 
+		{ pos: [-0.5,-0.5], owner: players[2]}, 
+		{ pos: [-0.5,0.5], owner: players[3]}, 
+		{ pos: [0.5,-0.5], owner: players[0]}
+	];
 	
 	var particleCount = 2000;
-	var p = { v:new Float32Array(particleCount*3), m:[], a:[], p:[], c:new Float32Array(particleCount*3), vb : gl.createBuffer(), cb : gl.createBuffer() };
+	var p = { v:new Float32Array(particleCount*3), m:[], a:[], planet:[], player:[], c:new Float32Array(particleCount*3), vb : gl.createBuffer(), cb : gl.createBuffer() };
 	for ( var i = 0; i < particleCount; i++) {
-		p.v[i*3+0] = (Math.random() - 0.5) * 50; // vertices
-		p.v[i*3+1] = (Math.random() - 0.5) * 50;
+		p.v[i*3+0] = Math.random()*2 - 1; // vertices
+		p.v[i*3+1] = Math.random()*2 - 1;
 		p.v[i*3+2] = 0;
 		p.m[i*2+0] = 0; // movement vector
 		p.m[i*2+1] = 0;
 		p.a[i*2+0] = 0; // acceleration vector
 		p.a[i*2+1] = 0;
-		p.p[i] = Math.floor(Math.random() * (planets.length/2+1)); // assigned planet 
-		p.c[i*3+0] = ( p.p[i] & 1) == 0?1:0; // color
-		p.c[i*3+1] = ( p.p[i] & 2) == 0?1:0;
-		p.c[i*3+2] = ( p.p[i] & 4) == 0?1:0;
+		p.planet[i] = Math.floor(Math.random() * (planets.length/2+1)); // assigned planet 
+		p.player[i] = p.planet[i].owner; // assigned player 
+		p.c[i*3+0] = p.player[i].color[0];
+		p.c[i*3+1] = p.player[i].color[1];
+		p.c[i*3+2] = p.player[i].color[2];
 	}
-	
-	var mvMatrix = new Float32Array(16);
-	mvMatrix[0] = 1;
-	mvMatrix[5] = 1;
-	mvMatrix[10] = 1;
-	mvMatrix[14] = cameraDistance;
-	mvMatrix[15] = 1;
-
-	gl.bindBuffer( gl.ARRAY_BUFFER, p.cb);
-	gl.bufferData( gl.ARRAY_BUFFER, new Float32Array(p.c), gl.DYNAMIC_DRAW);
-	gl.vertexAttribPointer( cLoc, 3, gl.FLOAT, false, 0, 0);
-		
 	
 	function drawScene(elapsed) {
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		
-		gl.uniformMatrix4fv( pmLoc, false, pMatrix);
-		gl.uniformMatrix4fv( mvLoc, false, mvMatrix);
-	
 		gl.bindBuffer( gl.ARRAY_BUFFER, p.vb);
 		gl.bufferData( gl.ARRAY_BUFFER, p.v, gl.DYNAMIC_DRAW);
 		gl.vertexAttribPointer( vpLoc, 3, gl.FLOAT, false, 0, 0);
@@ -144,7 +135,6 @@
 		if(isNaN(elapsed)) elapsed = 0;
 		requestAnimationFrame(tick);
 		var e = timeNow/1000;
-		//mvMatrix[14] += 0.1; // zoom camera
 		for ( var i = 0; i < particleCount; i++) {
 			p.v[i*3+0] += p.m[i*2+0]; // add the movement vector to the current position
 			p.v[i*3+1] += p.m[i*2+1];
@@ -152,13 +142,13 @@
 			p.a[i*2+0] = planets[p.p[i]*2+0] - p.v[i*3+0]; // set the accel vector to the direction of the planet
 			p.a[i*2+1] = planets[p.p[i]*2+1] - p.v[i*3+1];
 			
-			normalize2D(p.a,i,0.01); // normalize it
+			normalize2D(p.a,i,0.00002); // normalize it
 
 			p.m[i*2+0] += p.a[i*2+0]; // set the movement vector 
 			p.m[i*2+1] += p.a[i*2+1];
 			
-			if(vecLen2DSquared(p.m,i)>0.04) { // clamp the movement vector
-				normalize2D(p.m,i, 0.2);
+			if(vecLen2DSquared(p.m,i)>0.002*0.002) { // clamp the movement vector
+				normalize2D(p.m,i, 0.002);
 			}
 		}
 		drawScene(e);
@@ -173,10 +163,14 @@
 		return Math.sqrt(x*x + y*y);
 	};
 	
+	
+	var closestPlanet = 0;
+	var closestPlanet2 = 0;
+
 	canvas.addEventListener('mousedown', function(e){
-		var x = e.clientX;
-		var y = e.clientY;
-		var closestPlanet = 0;
+		var x = (e.clientX/canvas.width)*2-1;
+		var y = -((e.clientY/canvas.height)*2-1);
+		
 		var lastDistance = 10000;
 		for ( var i = 0; i < planets.length/2; i++) {
 			var px = planets[i*2+0];
@@ -187,6 +181,40 @@
 				closestPlanet = i;
 			}
 		}
+		// set all particles close the the selected planet to white
+		for ( var i = 0; i < particleCount; i++) {
+			if( p.p[i] == closestPlanet ) {
+				p.c[i*3+0] = 1;
+				p.c[i*3+1] = 1;
+				p.c[i*3+2] = 1;
+			}
+		}
+
+		
+	});
+	canvas.addEventListener('mouseup', function(e){
+		var x = (e.clientX/canvas.width)*2-1;
+		var y = -((e.clientY/canvas.height)*2-1);
+		
+		var lastDistance = 10000;
+		for ( var i = 0; i < planets.length/2; i++) {
+			var px = planets[i*2+0];
+			var py = planets[i*2+1];
+			var d = distance( x, y, px, py);
+			if( d < lastDistance) {
+				lastDistance = d;
+				closestPlanet2 = i;
+			}
+		}
+		// set all particles close the the selected planet to white
+		for ( var i = 0; i < particleCount; i++) {
+			if( p.p[i] == closestPlanet ) {
+				p.c[i*3+0] = 1;
+				p.c[i*3+1] = 1;
+				p.c[i*3+2] = 1;
+			}
+		}
+
 		
 	});
 
