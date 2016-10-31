@@ -36,7 +36,7 @@
 					   "varying vec3 vColor;"+
 					   "void main(void) {"+
 					   "  gl_Position = vec4(vertexPosition, 1.0);"+
-					   "  gl_Position.x /= " + aspect + ";"+
+					   //"  gl_Position.x /= " + aspect + ";"+
 					   "  gl_PointSize = 6.0;"+
 					   "  vColor = color;"+
 					   "}";
@@ -72,28 +72,43 @@
 	}];
 	
 	var planets = [
-		{ pos: [0,0], owner: players[0]}, 
-		{ pos: [0.5,0.5], owner: players[1]}, 
-		{ pos: [-0.5,-0.5], owner: players[2]}, 
-		{ pos: [-0.5,0.5], owner: players[3]}, 
-		{ pos: [0.5,-0.5], owner: players[0]}
+		{ pos: [0,0], owner: players[0], start: 100}, 
+		{ pos: [-0.9,0.5], owner: players[1], start: 500}, 
+		{ pos: [-0.5,0.5], owner: players[0], start: 100}, 
+		{ pos: [0.5,0.5], owner: players[0], start: 100}, 
+		{ pos: [-0.5,-0.5], owner: players[2], start: 200}, 
+		{ pos: [0.5,-0.5], owner: players[3], start: 500}
 	];
 	
-	var particleCount = 2000;
+	var particleCount = 0;
+	
+	for(var i=0; i<planets.length; i++) {
+		particleCount += planets[i].start;
+	}
+	
+	var planetIndex = 0;
+	var planetParticleCount = 0;
+	
 	var p = { v:new Float32Array(particleCount*3), m:[], a:[], planet:[], player:[], c:new Float32Array(particleCount*3), vb : gl.createBuffer(), cb : gl.createBuffer() };
 	for ( var i = 0; i < particleCount; i++) {
-		p.v[i*3+0] = Math.random()*2 - 1; // vertices
-		p.v[i*3+1] = Math.random()*2 - 1;
-		p.v[i*3+2] = 0;
-		p.m[i*2+0] = 0; // movement vector
-		p.m[i*2+1] = 0;
-		p.a[i*2+0] = 0; // acceleration vector
-		p.a[i*2+1] = 0;
-		p.planet[i] = planets[Math.floor(Math.random() * planets.length)]; // assigned planet 
+		if( planetParticleCount++ > planets[planetIndex].start) {
+			planetParticleCount=0;
+			planetIndex++;
+		}
+		p.planet[i] = planets[planetIndex]; // assigned planet 
 		p.player[i] = p.planet[i].owner; // assigned player 
 		p.c[i*3+0] = p.player[i].color[0];
 		p.c[i*3+1] = p.player[i].color[1];
 		p.c[i*3+2] = p.player[i].color[2];
+		var angle = Math.random()*Math.PI*2;
+		var radius = Math.random(); 
+		p.v[i*3+0] = p.planet[i].pos[0] + Math.cos(angle)*radius*0.1; // vertices start close to the planet
+		p.v[i*3+1] = p.planet[i].pos[1] + Math.sin(angle)*radius*0.1;
+		p.v[i*3+2] = 0;
+		p.m[i*2+0] = (Math.random()*2 - 1)*0.002; // movement vector
+		p.m[i*2+1] = (Math.random()*2 - 1)*0.002;
+		p.a[i*2+0] = (Math.random()*2 - 1)*0.01; // acceleration vector
+		p.a[i*2+1] = (Math.random()*2 - 1)*0.01;
 	}
 	
 	function drawScene(elapsed) {
@@ -152,6 +167,25 @@
 			}
 		}
 		drawScene(e);
+
+		var rndInt = Math.floor(Math.random() * queue.length); // select a random fighting particle
+		var rndParticleNum = queue[rndInt];
+		var rndPlayer = p.player[rndParticleNum];
+		
+		for(var i=0; i<queue.length; i++) {
+			var particleNum = queue[i];
+			if( p.player[particleNum] != rndPlayer) {
+				p.player[particleNum] = rndPlayer;
+				p.c[particleNum*3+0] = rndPlayer.color[0];
+				p.c[particleNum*3+1] = rndPlayer.color[1];
+				p.c[particleNum*3+2] = rndPlayer.color[2];
+				break;
+			}
+			if(i==queue.length-1) {
+				queue = [];
+			}
+		}
+		
 	}
 	
 	console.log( 'error: ' + gl.getError());
@@ -164,13 +198,13 @@
 	};
 	
 	
-	var closestPlanet1 = 0;
-	var closestPlanet2 = 0;
-
-	canvas.addEventListener('mousedown', function(e){
-		var x = (e.clientX/canvas.width)*2-1;
-		var y = -((e.clientY/canvas.height)*2-1);
-		
+	var closestPlanet1 = planets[0];
+	var closestPlanet2 = planets[0];
+	
+	var queue = [];
+	
+	function findClosestPlanet(x,y) {
+		var closestPlanet;
 		var lastDistance = 10000;
 		for ( var i = 0; i < planets.length; i++) {
 			var px = planets[i].pos[0];
@@ -178,41 +212,38 @@
 			var d = distance( x, y, px, py);
 			if( d < lastDistance) {
 				lastDistance = d;
-				closestPlanet1 = planets[i];
+				closestPlanet = planets[i];
 			}
 		}
-		// set all particles close the the selected planet to white
-		/*
-		for ( var i = 0; i < particleCount; i++) {
-			if( p.planet[i] == closestPlanet ) {
-				p.c[i*3+0] = 1;
-				p.c[i*3+1] = 1;
-				p.c[i*3+2] = 1;
-			}
-		}
-		*/
+		return closestPlanet;
+	}
 
-		
+	canvas.addEventListener('mousedown', function(e){
+		var x = (e.clientX/canvas.width)*2-1;
+		var y = -((e.clientY/canvas.height)*2-1);
+		console.log(x,y);
+		closestPlanet1 = findClosestPlanet(x,y);
 	});
 	canvas.addEventListener('mouseup', function(e){
 		var x = (e.clientX/canvas.width)*2-1;
 		var y = -((e.clientY/canvas.height)*2-1);
+		console.log(x,y);
+		closestPlanet2 = findClosestPlanet(x,y);
 		
-		var lastDistance = 10000;
-		for ( var i = 0; i < planets.length/2; i++) {
-			var px = planets[i].pos[0];
-			var py = planets[i].pos[1];
-			var d = distance( x, y, px, py);
-			if( d < lastDistance) {
-				lastDistance = d;
-				closestPlanet2 = planets[i];
-			}
-		}
-		
+		if( closestPlanet1==closestPlanet2)
+			return;
+			
+		var skip = 20;
 		for ( var i = 0; i < particleCount; i++) {
 			if( p.planet[i] == closestPlanet1 ) {
-				p.planet[i] = closestPlanet2;
+				if(skip--<0) {
+					p.planet[i] = closestPlanet2;
+					queue.push(i);
+				}
+			} else if( p.planet[i] == closestPlanet2 ) {
+				queue.push(i);
 			}
+
 		}
 
 		
