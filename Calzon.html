@@ -62,13 +62,13 @@
 	gl.enableVertexAttribArray(cLoc);
 	
 	var players = [{
-			color: [0.8,0.8,0.8]; // neutral
+			color: [0.8,0.8,0.8] // neutral
 		},{
-			color: [0,0,1]; // human
+			color: [0,0,1] // human
 		},{
-			color: [1,0,0]; // computer 1
+			color: [1,0,0] // computer 1
 		},{
-			color: [0,1,0]; // computer 2
+			color: [0,1,0] // computer 2
 	}];
 	
 	var planets = [
@@ -89,7 +89,7 @@
 		p.m[i*2+1] = 0;
 		p.a[i*2+0] = 0; // acceleration vector
 		p.a[i*2+1] = 0;
-		p.planet[i] = Math.floor(Math.random() * (planets.length/2+1)); // assigned planet 
+		p.planet[i] = planets[Math.floor(Math.random() * planets.length)]; // assigned planet 
 		p.player[i] = p.planet[i].owner; // assigned player 
 		p.c[i*3+0] = p.player[i].color[0];
 		p.c[i*3+1] = p.player[i].color[1];
@@ -139,8 +139,8 @@
 			p.v[i*3+0] += p.m[i*2+0]; // add the movement vector to the current position
 			p.v[i*3+1] += p.m[i*2+1];
 			
-			p.a[i*2+0] = planets[p.p[i]*2+0] - p.v[i*3+0]; // set the accel vector to the direction of the planet
-			p.a[i*2+1] = planets[p.p[i]*2+1] - p.v[i*3+1];
+			p.a[i*2+0] = p.planet[i].pos[0] - p.v[i*3+0]; // set the accel vector to the direction of the planet
+			p.a[i*2+1] = p.planet[i].pos[1] - p.v[i*3+1];
 			
 			normalize2D(p.a,i,0.00002); // normalize it
 
@@ -164,7 +164,7 @@
 	};
 	
 	
-	var closestPlanet = 0;
+	var closestPlanet1 = 0;
 	var closestPlanet2 = 0;
 
 	canvas.addEventListener('mousedown', function(e){
@@ -172,23 +172,25 @@
 		var y = -((e.clientY/canvas.height)*2-1);
 		
 		var lastDistance = 10000;
-		for ( var i = 0; i < planets.length/2; i++) {
-			var px = planets[i*2+0];
-			var py = planets[i*2+1];
+		for ( var i = 0; i < planets.length; i++) {
+			var px = planets[i].pos[0];
+			var py = planets[i].pos[1];
 			var d = distance( x, y, px, py);
 			if( d < lastDistance) {
 				lastDistance = d;
-				closestPlanet = i;
+				closestPlanet1 = planets[i];
 			}
 		}
 		// set all particles close the the selected planet to white
+		/*
 		for ( var i = 0; i < particleCount; i++) {
-			if( p.p[i] == closestPlanet ) {
+			if( p.planet[i] == closestPlanet ) {
 				p.c[i*3+0] = 1;
 				p.c[i*3+1] = 1;
 				p.c[i*3+2] = 1;
 			}
 		}
+		*/
 
 		
 	});
@@ -198,20 +200,18 @@
 		
 		var lastDistance = 10000;
 		for ( var i = 0; i < planets.length/2; i++) {
-			var px = planets[i*2+0];
-			var py = planets[i*2+1];
+			var px = planets[i].pos[0];
+			var py = planets[i].pos[1];
 			var d = distance( x, y, px, py);
 			if( d < lastDistance) {
 				lastDistance = d;
-				closestPlanet2 = i;
+				closestPlanet2 = planets[i];
 			}
 		}
-		// set all particles close the the selected planet to white
+		
 		for ( var i = 0; i < particleCount; i++) {
-			if( p.p[i] == closestPlanet ) {
-				p.c[i*3+0] = 1;
-				p.c[i*3+1] = 1;
-				p.c[i*3+2] = 1;
+			if( p.planet[i] == closestPlanet1 ) {
+				p.planet[i] = closestPlanet2;
 			}
 		}
 
