@@ -36,7 +36,7 @@
 					   "varying vec3 vColor;"+
 					   "void main(void) {"+
 					   "  gl_Position = vec4(vertexPosition, 1.0);"+
-					   //"  gl_Position.x /= " + aspect + ";"+
+					   "  gl_Position.x /= " + aspect + ";"+
 					   "  gl_PointSize = 6.0;"+
 					   "  vColor = color;"+
 					   "}";
@@ -45,8 +45,8 @@
 						 "varying vec3 vColor;"+
 						 "void main(void) {"+
 						 "  vec2 uv = 2.0 * gl_PointCoord - 1.0;"+
-						 "  float r = 1.0-(uv.x * uv.x + uv.y * uv.y);"+
-						 "  gl_FragColor = vec4(vec3(r)*vColor,1.0);"+
+						 "  float r = -log(sqrt(dot(uv, uv)));"+
+						 "  gl_FragColor = vec4(vColor*r,1.0);"+
 						 "}";
 	
 	var shaderProgram = gl.createProgram();
@@ -72,12 +72,12 @@
 	}];
 	
 	var planets = [
-		{ pos: [0,0], owner: players[0], start: 100}, 
-		{ pos: [-0.9,0.5], owner: players[1], start: 500}, 
-		{ pos: [-0.5,0.5], owner: players[0], start: 100}, 
-		{ pos: [0.5,0.5], owner: players[0], start: 100}, 
-		{ pos: [-0.5,-0.5], owner: players[2], start: 200}, 
-		{ pos: [0.5,-0.5], owner: players[3], start: 500}
+		{ pos: [0,0], owner: players[0], start: 200}, 
+		{ pos: [-0.9,0.5], owner: players[1], start: 1000}, 
+		{ pos: [-0.5,0.5], owner: players[0], start: 200}, 
+		{ pos: [0.5,0.5], owner: players[0], start: 200}, 
+		{ pos: [-0.5,-0.5], owner: players[2], start: 400}, 
+		{ pos: [0.5,-0.5], owner: players[3], start: 1000}
 	];
 	
 	var particleCount = 0;
@@ -105,10 +105,11 @@
 		p.v[i*3+0] = p.planet[i].pos[0] + Math.cos(angle)*radius*0.1; // vertices start close to the planet
 		p.v[i*3+1] = p.planet[i].pos[1] + Math.sin(angle)*radius*0.1;
 		p.v[i*3+2] = 0;
-		p.m[i*2+0] = (Math.random()*2 - 1)*0.002; // movement vector
-		p.m[i*2+1] = (Math.random()*2 - 1)*0.002;
-		p.a[i*2+0] = (Math.random()*2 - 1)*0.01; // acceleration vector
-		p.a[i*2+1] = (Math.random()*2 - 1)*0.01;
+		var fac = Math.random()>0.5?1:-1;
+		p.m[i*2+0] = fac*Math.cos(angle)*radius*0.001; // (Math.random()*2 - 1)*0.002; // movement vector
+		p.m[i*2+1] = fac*Math.sin(angle)*radius*0.001; // (Math.random()*2 - 1)*0.002;
+		p.a[i*2+0] = 0.0; // acceleration vector
+		p.a[i*2+1] = 0.0;
 	}
 	
 	function drawScene(elapsed) {
@@ -175,14 +176,17 @@
 		for(var i=0; i<queue.length; i++) {
 			var particleNum = queue[i];
 			if( p.player[particleNum] != rndPlayer) {
-				p.player[particleNum] = rndPlayer;
-				p.c[particleNum*3+0] = rndPlayer.color[0];
-				p.c[particleNum*3+1] = rndPlayer.color[1];
-				p.c[particleNum*3+2] = rndPlayer.color[2];
+				if( distanceSquared(p.v[rndParticleNum*3+0], p.v[rndParticleNum*3+1], p.v[particleNum*3+0], p.v[particleNum*3+1])<0.1 ) {
+					p.player[particleNum] = rndPlayer;
+					p.c[particleNum*3+0] = rndPlayer.color[0];
+					p.c[particleNum*3+1] = rndPlayer.color[1];
+					p.c[particleNum*3+2] = rndPlayer.color[2];
+				}
 				break;
 			}
 			if(i==queue.length-1) {
 				queue = [];
+				console.log("queue emptied");
 			}
 		}
 		
@@ -191,6 +195,11 @@
 	console.log( 'error: ' + gl.getError());
 	requestAnimationFrame(tick);
 	
+	function distanceSquared(x1, y1, x2, y2) {
+		var x = x2 - x1,
+			y = y2 - y1;
+		return x*x + y*y;
+	};
 	function distance(x1, y1, x2, y2) {
 		var x = x2 - x1,
 			y = y2 - y1;
@@ -217,18 +226,19 @@
 		}
 		return closestPlanet;
 	}
-
-	canvas.addEventListener('mousedown', function(e){
+	
+	function handleMouse(e) {
 		var x = (e.clientX/canvas.width)*2-1;
+		x/=aspect;
 		var y = -((e.clientY/canvas.height)*2-1);
 		console.log(x,y);
-		closestPlanet1 = findClosestPlanet(x,y);
-	});
-	canvas.addEventListener('mouseup', function(e){
-		var x = (e.clientX/canvas.width)*2-1;
-		var y = -((e.clientY/canvas.height)*2-1);
-		console.log(x,y);
-		closestPlanet2 = findClosestPlanet(x,y);
+		
+		if( e.type === "mousedown") {
+			closestPlanet1 = findClosestPlanet(x,y);
+			return;
+		} else {
+			closestPlanet2 = findClosestPlanet(x,y);
+		}
 		
 		if( closestPlanet1==closestPlanet2)
 			return;
@@ -245,9 +255,10 @@
 			}
 
 		}
+	}
 
-		
-	});
+	canvas.addEventListener('mousedown', handleMouse);
+	canvas.addEventListener('mouseup', handleMouse);
 
 
 </script>
